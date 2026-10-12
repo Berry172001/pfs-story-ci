@@ -1,0 +1,78 @@
+name: Build PFS Story macOS (public builder)
+
+# Публичный репо-сборщик: сам код ПРИВАТНЫЙ (тянется из Berry172001/pfs-story-build по
+# read-only deploy-key SSH_PRIVATE_KEY). Репо публичный → macOS-раннеры БЕСПЛАТНЫ без лимитов.
+# Сборка обеих арок, публикация на Cloudflare, .dmg — артефактами.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Кому обновление: all (всем) | dev (создателю)"
+        default: "all"
+        type: choice
+        options: [all, dev]
+
+jobs:
+  arm:
+    runs-on: macos-14
+    steps:
+      - name: Checkout private source (deploy-key)
+        uses: actions/checkout@v4
+        with:
+          repository: Berry172001/pfs-story-build
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_mac.txt
+      - name: Build .app + .dmg (arm64)
+        run: bash build_mac.sh
+      - name: Publish update to Cloudflare (arm64)
+        run: bash publish_story_mac.sh "${{ github.event.inputs.channel || 'all' }}" "${{ secrets.ADMIN_TOKEN }}"
+      - name: Upload .dmg (Apple Silicon)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PFS-Story-AppleSilicon-dmg
+          path: installer/*.dmg
+          if-no-files-found: error
+          retention-days: 5
+
+  intel:
+    runs-on: macos-14
+    steps:
+      - name: Checkout private source (deploy-key)
+        uses: actions/checkout@v4
+        with:
+          repository: Berry172001/pfs-story-build
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ref: main
+      - name: Install Rosetta 2
+        run: sudo softwareupdate --install-rosetta --agree-to-license || true
+      - name: Install universal2 Python (x86_64-слой)
+        run: |
+          curl -fL -o /tmp/py.pkg https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg
+          sudo installer -pkg /tmp/py.pkg -target /
+      - name: Build .app + .dmg (x86_64 via Rosetta)
+        run: |
+          set -e
+          export _PYTHON_HOST_PLATFORM=macosx-12.0-x86_64
+          export ARCHFLAGS="-arch x86_64"
+          PY=/usr/local/bin/python3.11
+          arch -x86_64 "$PY" -m venv .venv_x86
+          source .venv_x86/bin/activate
+          arch -x86_64 python -m pip install --upgrade pip
+          arch -x86_64 python -m pip install -r requirements_mac.txt
+          arch -x86_64 bash build_mac.sh
+      - name: Publish update to Cloudflare (x86_64)
+        run: arch -x86_64 bash publish_story_mac.sh "${{ github.event.inputs.channel || 'all' }}" "${{ secrets.ADMIN_TOKEN }}"
+      - name: Upload .dmg (Intel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PFS-Story-Intel-dmg
+          path: installer/*.dmg
+          if-no-files-found: error
+          retention-days: 5
