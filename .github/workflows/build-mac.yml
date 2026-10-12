@@ -2,7 +2,9 @@ name: Build PFS Story macOS (public builder)
 
 # Публичный репо-сборщик: сам код ПРИВАТНЫЙ (тянется из Berry172001/pfs-story-build по
 # read-only deploy-key SSH_PRIVATE_KEY). Репо публичный → macOS-раннеры БЕСПЛАТНЫ без лимитов.
-# Сборка обеих арок, публикация ТОЛЬКО на Cloudflare. Артефакты в публичный репо не кладём.
+# Сборка обеих арок. Лёгкое обновление (бинарь) → Cloudflare (автообновление по интернету).
+# Полный .dmg → пушится в ПРИВАТНЫЙ репо (ветки mac-arm/mac-intel) по write-ключу PUSH_KEY —
+# в закрытом доступе, посторонний скачать не может. В публичном репо артефактов НЕТ.
 on:
   workflow_dispatch:
     inputs:
@@ -33,9 +35,20 @@ jobs:
         run: bash build_mac.sh
       - name: Publish update to Cloudflare (arm64)
         run: bash publish_story_mac.sh "${{ github.event.inputs.channel || 'all' }}" "${{ secrets.ADMIN_TOKEN }}"
-      # .dmg НЕ выгружаем артефактом: публичный репо → артефакт мог бы скачать посторонний.
-      # Готовое обновление уходит только на Cloudflare (канал автообновления); на ПК создателя
-      # dmg качается с Cloudflare. В публичном доступе не остаётся ни кода, ни приложения.
+      - name: Доставить полный .dmg в приватный репо (ветка mac-arm)
+        env:
+          PUSH_KEY: ${{ secrets.PUSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh && printf '%s\n' "$PUSH_KEY" > ~/.ssh/push_key && chmod 600 ~/.ssh/push_key
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/push_key -o StrictHostKeyChecking=no"
+          DMG="$(ls installer/*.dmg | head -1)"
+          W="$(mktemp -d)"; cp "$DMG" "$W/$(basename "$DMG")"; cd "$W"
+          git init -q && git checkout -q --orphan mac-arm && git add -A
+          git -c user.email=ci@local -c user.name=ci commit -q -m "mac arm64 installer"
+          git remote add origin git@github.com:Berry172001/pfs-story-build.git
+          git push -q -f origin mac-arm
+          echo "Доставлено в приватный репо (ветка mac-arm): $(basename "$DMG")"
 
   intel:
     runs-on: macos-14
@@ -65,4 +78,17 @@ jobs:
           arch -x86_64 bash build_mac.sh
       - name: Publish update to Cloudflare (x86_64)
         run: arch -x86_64 bash publish_story_mac.sh "${{ github.event.inputs.channel || 'all' }}" "${{ secrets.ADMIN_TOKEN }}"
-      # .dmg НЕ выгружаем артефактом (см. коммент в job arm): в публичном доступе ничего не остаётся.
+      - name: Доставить полный .dmg в приватный репо (ветка mac-intel)
+        env:
+          PUSH_KEY: ${{ secrets.PUSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh && printf '%s\n' "$PUSH_KEY" > ~/.ssh/push_key && chmod 600 ~/.ssh/push_key
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/push_key -o StrictHostKeyChecking=no"
+          DMG="$(ls installer/*.dmg | head -1)"
+          W="$(mktemp -d)"; cp "$DMG" "$W/$(basename "$DMG")"; cd "$W"
+          git init -q && git checkout -q --orphan mac-intel && git add -A
+          git -c user.email=ci@local -c user.name=ci commit -q -m "mac intel installer"
+          git remote add origin git@github.com:Berry172001/pfs-story-build.git
+          git push -q -f origin mac-intel
+          echo "Доставлено в приватный репо (ветка mac-intel): $(basename "$DMG")"
