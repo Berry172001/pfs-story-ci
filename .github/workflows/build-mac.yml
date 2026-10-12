@@ -2,7 +2,7 @@ name: Build PFS Story macOS (public builder)
 
 # Публичный репо-сборщик: сам код ПРИВАТНЫЙ (тянется из Berry172001/pfs-story-build по
 # read-only deploy-key SSH_PRIVATE_KEY). Репо публичный → macOS-раннеры БЕСПЛАТНЫ без лимитов.
-# Сборка обеих арок, публикация на Cloudflare, .dmg — артефактами.
+# Сборка обеих арок, публикация ТОЛЬКО на Cloudflare. Артефакты в публичный репо не кладём.
 on:
   workflow_dispatch:
     inputs:
@@ -33,13 +33,9 @@ jobs:
         run: bash build_mac.sh
       - name: Publish update to Cloudflare (arm64)
         run: bash publish_story_mac.sh "${{ github.event.inputs.channel || 'all' }}" "${{ secrets.ADMIN_TOKEN }}"
-      - name: Upload .dmg (Apple Silicon)
-        uses: actions/upload-artifact@v4
-        with:
-          name: PFS-Story-AppleSilicon-dmg
-          path: installer/*.dmg
-          if-no-files-found: error
-          retention-days: 5
+      # .dmg НЕ выгружаем артефактом: публичный репо → артефакт мог бы скачать посторонний.
+      # Готовое обновление уходит только на Cloudflare (канал автообновления); на ПК создателя
+      # dmg качается с Cloudflare. В публичном доступе не остаётся ни кода, ни приложения.
 
   intel:
     runs-on: macos-14
@@ -69,10 +65,4 @@ jobs:
           arch -x86_64 bash build_mac.sh
       - name: Publish update to Cloudflare (x86_64)
         run: arch -x86_64 bash publish_story_mac.sh "${{ github.event.inputs.channel || 'all' }}" "${{ secrets.ADMIN_TOKEN }}"
-      - name: Upload .dmg (Intel)
-        uses: actions/upload-artifact@v4
-        with:
-          name: PFS-Story-Intel-dmg
-          path: installer/*.dmg
-          if-no-files-found: error
-          retention-days: 5
+      # .dmg НЕ выгружаем артефактом (см. коммент в job arm): в публичном доступе ничего не остаётся.
